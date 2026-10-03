@@ -1,42 +1,71 @@
-import os
 import requests
 import feedparser
 import hashlib
+import os
+import html
 from urllib.parse import quote
 
-
-# ==============================
-# Telegram Settings
-# ==============================
+# ==========================================
+# Telegram
+# ==========================================
 
 BOT_TOKEN = "8964282170:AAEHzp1Ixcq9G1NZajbDAZms8CxbwB6IL00"
 CHAT_ID = "-1004455970098"
 
-
-# ==============================
-# News Search Topics
-# ==============================
+# ==========================================
+# Google News Persian searches
+# ==========================================
 
 SEARCH_QUERIES = [
-    "world politics",
-    "international politics",
-    "US politics",
-    "Russia Ukraine",
-    "Middle East",
-    "Israel Palestine",
-    "Iran politics",
-    "China politics",
-    "Europe politics",
-    "war diplomacy",
-    "international relations"
+    "اخبار جهان",
+    "اخبار سیاسی جهان",
+    "سیاست بین الملل",
+    "آمریکا جهان",
+    "روسیه اوکراین",
+    "خاورمیانه",
+    "اسرائیل فلسطین",
+    "ایران جهان",
+    "چین جهان",
+    "جنگ دیپلماسی"
 ]
 
+STATE_FILE = "sent_news.txt"
 
-# ==============================
-# Get news from Google News
-# ==============================
+
+# ==========================================
+# خواندن خبرهای قبلی
+# ==========================================
+
+def get_sent_news():
+
+    if not os.path.exists(STATE_FILE):
+        return set()
+
+    with open(STATE_FILE, "r", encoding="utf-8") as file:
+        return set(
+            line.strip()
+            for line in file
+            if line.strip()
+        )
+
+
+# ==========================================
+# ذخیره خبر ارسال‌شده
+# ==========================================
+
+def save_news(news_id):
+
+    with open(STATE_FILE, "a", encoding="utf-8") as file:
+        file.write(news_id + "\n")
+
+
+# ==========================================
+# دریافت خبرها
+# ==========================================
 
 def get_news():
+
+    sent_news = get_sent_news()
 
     all_news = []
 
@@ -45,31 +74,43 @@ def get_news():
         rss_url = (
             "https://news.google.com/rss/search?"
             f"q={quote(query)}"
-            "&hl=en-US"
-            "&gl=US"
-            "&ceid=US:en"
+            "&hl=fa"
+            "&gl=IR"
+            "&ceid=IR:fa"
         )
 
-        feed = feedparser.parse(rss_url)
+        try:
 
-        for entry in feed.entries[:10]:
+            feed = feedparser.parse(rss_url)
 
-            title = entry.get("title", "").strip()
-            link = entry.get("link", "").strip()
+            for entry in feed.entries[:10]:
 
-            if not title or not link:
-                continue
+                title = entry.get("title", "").strip()
+                link = entry.get("link", "").strip()
 
-            news_id = hashlib.sha256(
-                (title + link).encode("utf-8")
-            ).hexdigest()
+                if not title or not link:
+                    continue
 
-            all_news.append({
-                "id": news_id,
-                "title": title,
-                "link": link
-            })
+                news_id = hashlib.sha256(
+                    (title + link).encode("utf-8")
+                ).hexdigest()
 
+                if news_id in sent_news:
+                    continue
+
+                all_news.append({
+                    "id": news_id,
+                    "title": title,
+                    "link": link
+                })
+
+        except Exception as error:
+
+            print("RSS error:", error)
+
+
+    if not all_news:
+        return None
 
     # حذف خبرهای تکراری
     unique_news = {}
@@ -79,82 +120,78 @@ def get_news():
 
     all_news = list(unique_news.values())
 
-
     if not all_news:
         return None
 
-
-    # اولین خبر جدید را انتخاب کن
+    # اولین خبر جدید
     return all_news[0]
 
 
-# ==============================
-# Send news to Telegram
-# ==============================
+# ==========================================
+# ارسال به تلگرام
+# ==========================================
 
-def send_telegram(title, link):
+def send_to_telegram(news):
 
-    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
+    title = html.escape(news["title"])
+    link = html.escape(news["link"], quote=True)
 
-
-    text = (
+    message = (
         "🌍 <b>خبر مهم جهان</b>\n\n"
-        f"📰 <b>{title}</b>\n\n"
-        f"🔗 <a href=\"{link}\">مشاهده منبع خبر</a>\n\n"
+        f"🔴 <b>{title}</b>\n\n"
+        f"🔗 <a href=\"{link}\">مشاهده خبر</a>\n\n"
         "━━━━━━━━━━━━━━\n"
         "📢 @TIIME_NEWS | تایم نیوز"
     )
 
+    url = (
+        f"https://api.telegram.org/"
+        f"bot{BOT_TOKEN}/sendMessage"
+    )
 
     response = requests.post(
-
         url,
-
         data={
             "chat_id": CHAT_ID,
-            "text": text,
+            "text": message,
             "parse_mode": "HTML",
             "disable_web_page_preview": False
         },
-
         timeout=30
     )
-
 
     response.raise_for_status()
 
 
-# ==============================
-# Main
-# ==============================
+# ==========================================
+# اجرای اصلی
+# ==========================================
 
 def main():
 
-    news = get_news()
+    print("در حال بررسی خبرهای جدید...")
 
+    news = get_news()
 
     if not news:
 
-        print("No news found.")
+        print("خبر جدیدی پیدا نشد.")
 
         return
 
-
-    send_telegram(
-        news["title"],
-        news["link"]
-    )
-
-
-    print("News sent successfully.")
-
+    print("خبر پیدا شد:")
     print(news["title"])
 
+    send_to_telegram(news)
 
-# ==============================
-# Run
-# ==============================
+    save_news(news["id"])
+
+    print("خبر با موفقیت ارسال شد.")
+
+
+# ==========================================
+# Start
+# ==========================================
 
 if __name__ == "__main__":
-
     main()
