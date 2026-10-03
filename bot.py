@@ -2,6 +2,8 @@ import os
 import requests
 import feedparser
 import hashlib
+from urllib.parse import quote
+
 
 # ==============================
 # Telegram Settings
@@ -12,44 +14,22 @@ CHAT_ID = "-1004455970098"
 
 
 # ==============================
-# Google News RSS
+# News Search Topics
 # ==============================
 
-RSS_URL = (
-    "https://news.google.com/rss/search?"
-    "q=world+news&hl=en-US&gl=US&ceid=US:en"
-)
-
-
-# ==============================
-# File for remembering last news
-# ==============================
-
-STATE_FILE = "last_news.txt"
-
-
-# ==============================
-# Get last sent news
-# ==============================
-
-def get_last_news():
-
-    if os.path.exists(STATE_FILE):
-
-        with open(STATE_FILE, "r", encoding="utf-8") as f:
-            return f.read().strip()
-
-    return ""
-
-
-# ==============================
-# Save sent news
-# ==============================
-
-def save_last_news(news_id):
-
-    with open(STATE_FILE, "w", encoding="utf-8") as f:
-        f.write(news_id)
+SEARCH_QUERIES = [
+    "world politics",
+    "international politics",
+    "US politics",
+    "Russia Ukraine",
+    "Middle East",
+    "Israel Palestine",
+    "Iran politics",
+    "China politics",
+    "Europe politics",
+    "war diplomacy",
+    "international relations"
+]
 
 
 # ==============================
@@ -58,32 +38,54 @@ def save_last_news(news_id):
 
 def get_news():
 
-    feed = feedparser.parse(RSS_URL)
+    all_news = []
 
-    if not feed.entries:
+    for query in SEARCH_QUERIES:
 
+        rss_url = (
+            "https://news.google.com/rss/search?"
+            f"q={quote(query)}"
+            "&hl=en-US"
+            "&gl=US"
+            "&ceid=US:en"
+        )
+
+        feed = feedparser.parse(rss_url)
+
+        for entry in feed.entries[:10]:
+
+            title = entry.get("title", "").strip()
+            link = entry.get("link", "").strip()
+
+            if not title or not link:
+                continue
+
+            news_id = hashlib.sha256(
+                (title + link).encode("utf-8")
+            ).hexdigest()
+
+            all_news.append({
+                "id": news_id,
+                "title": title,
+                "link": link
+            })
+
+
+    # حذف خبرهای تکراری
+    unique_news = {}
+
+    for news in all_news:
+        unique_news[news["id"]] = news
+
+    all_news = list(unique_news.values())
+
+
+    if not all_news:
         return None
 
-    for entry in feed.entries:
 
-        title = entry.get("title", "").strip()
-        link = entry.get("link", "").strip()
-
-        if not title or not link:
-
-            continue
-
-        news_id = hashlib.sha256(
-            (title + link).encode("utf-8")
-        ).hexdigest()
-
-        return {
-            "id": news_id,
-            "title": title,
-            "link": link
-        }
-
-    return None
+    # اولین خبر جدید را انتخاب کن
+    return all_news[0]
 
 
 # ==============================
@@ -94,13 +96,15 @@ def send_telegram(title, link):
 
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
 
+
     text = (
-        "🌍 <b>مهم‌ترین خبر جهان</b>\n\n"
-        f"📰 {title}\n\n"
-        f"🔗 <a href=\"{link}\">مشاهده خبر</a>\n\n"
+        "🌍 <b>خبر مهم جهان</b>\n\n"
+        f"📰 <b>{title}</b>\n\n"
+        f"🔗 <a href=\"{link}\">مشاهده منبع خبر</a>\n\n"
         "━━━━━━━━━━━━━━\n"
         "📢 @TIIME_NEWS | تایم نیوز"
     )
+
 
     response = requests.post(
 
@@ -116,16 +120,18 @@ def send_telegram(title, link):
         timeout=30
     )
 
+
     response.raise_for_status()
 
 
 # ==============================
-# Main program
+# Main
 # ==============================
 
 def main():
 
     news = get_news()
+
 
     if not news:
 
@@ -133,22 +139,16 @@ def main():
 
         return
 
-    last_news = get_last_news()
-
-    if news["id"] == last_news:
-
-        print("This news was already sent.")
-
-        return
 
     send_telegram(
         news["title"],
         news["link"]
     )
 
-    save_last_news(news["id"])
 
     print("News sent successfully.")
+
+    print(news["title"])
 
 
 # ==============================
