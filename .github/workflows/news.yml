@@ -1,18 +1,20 @@
-name: News Bot
+name: Telegram News Bot
 
 on:
-  schedule:
-    - cron: "1 * * * *"
   workflow_dispatch:
 
-permissions:
-  contents: write
+  schedule:
+    - cron: "7,37 * * * *"
 
 jobs:
-  post-news:
+  send-news:
     runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+
     steps:
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Setup Python
@@ -20,15 +22,21 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Run bot
-        run: python bot.py
-
-      - name: Save sent list
+      - name: Install dependencies
         run: |
-          git config user.name "news-bot"
-          git config user.email "news-bot@users.noreply.github.com"
-          git add sent.json
-          if ! git diff --staged --quiet; then
-            git commit -m "update sent list"
-            git push
-          fi
+          pip install -r requirements.txt
+
+      - name: Run news bot
+        run: |
+          python bot.py
+
+      - name: Save news state
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add last_news.txt
+
+          git diff --cached --quiet || git commit -m "Update news state"
+
+          git push
